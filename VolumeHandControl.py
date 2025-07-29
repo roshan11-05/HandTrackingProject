@@ -15,16 +15,15 @@ cap.set(4, hCam)
 detector = htm.handDetector(detectionCon=0.7)
 
 minVol = 0
-
 maxVol = 100
-
 vol = 0
-
 volBar = 400
-
 volPer = 0
-
 pTime = 0
+
+# For play/pause debounce
+lastGestureTime = 0
+gestureCooldown = 1.0  # seconds
 
 # ---------------- Volume control -------------------
 def set_volume_mac(volume_percent):
@@ -56,7 +55,7 @@ def voice_control_thread():
                 subprocess.call(["osascript", "-e", "set volume output muted true"])
             elif "unmute" in command:
                 subprocess.call(["osascript", "-e", "set volume output muted false"])
-            elif "stop video" in command:  # <-- Changed from "pause video"
+            elif "stop video" in command:
                 subprocess.call(["osascript", "-e", 'tell application "System Events" to key code 49'])  # Spacebar
             elif "play video" in command:
                 subprocess.call(["osascript", "-e", 'tell application "System Events" to key code 49'])  # Spacebar
@@ -78,11 +77,13 @@ while True:
     lmList = detector.findPosition(img, draw=False)
 
     if len(lmList) != 0:
-        x1, y1 = lmList[4][1], lmList[4][2]
-        x2, y2 = lmList[8][1], lmList[8][2]
+        x1, y1 = lmList[4][1], lmList[4][2]   # Thumb tip
+        x2, y2 = lmList[8][1], lmList[8][2]   # Index tip
+        x3, y3 = lmList[20][1], lmList[20][2] # Pinky tip
 
         cx, cy = (x1+x2)//2, (y1+y2)//2
 
+        # --- Volume Control using Thumb + Index ---
         cv2.circle(img, (x1, y1), 10, (255,0,255), cv2.FILLED)
         cv2.circle(img, (x2, y2), 10, (255,0,255), cv2.FILLED)
         cv2.line(img, (x1,y1), (x2,y2), (255,0,255), 2)
@@ -99,16 +100,27 @@ while True:
         if length < 30:
             cv2.circle(img, (cx, cy), 10, (0,0,255), cv2.FILLED)
 
+        # --- Play/Pause using Thumb + Pinky ---
+        pinky_dist = math.hypot(x3 - x1, y3 - y1)
+        currentTime = time.time()
+
+        if pinky_dist < 40 and (currentTime - lastGestureTime > gestureCooldown):
+            print("▶️ Play/Pause Triggered")
+            subprocess.call(["osascript", "-e", 'tell application "System Events" to key code 49'])  # Spacebar
+            lastGestureTime = currentTime
+
+    # Draw volume bar
     cv2.rectangle(img, (50,150), (85,400), (0,255,0), 3)
     cv2.rectangle(img, (50, int(volBar)), (85, 400), (0,255,0), cv2.FILLED)
     cv2.putText(img, f'{int(volPer)} %', (40, 450), cv2.FONT_HERSHEY_PLAIN, 2, (0,255,0), 2)
 
+    # FPS
     cTime = time.time()
-    fps = 1 / (cTime - pTime)
+    fps = 1 / (cTime - pTime + 0.000001)
     pTime = cTime
-
     cv2.putText(img, f'FPS: {int(fps)}', (500, 50), cv2.FONT_HERSHEY_PLAIN, 2, (255,0,0), 2)
 
     cv2.imshow("Img", img)
     if cv2.waitKey(1) == ord('q'):
         break
+ 
